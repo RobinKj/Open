@@ -8,7 +8,16 @@
 ##########################################################
 
 
+#install.packages('mlogit')
+#install.packages('data.table')
+#install.packages('gmnl')
 
+library(mlogit)
+library(data.table)
+library(cluster)
+library(MASS)
+library(factoextra)
+library(ggplot2)
 library(gmnl)
 
 # Set working directory
@@ -72,6 +81,9 @@ nrow(data.cbc)/12/4 == 400                                                      
 ### Make an copy version of the mxl_betai data for later comparisons
 mxl_betai_copy <- mxl_betai
 
+#summary(mxl_betai_copy)
+#hist(mxl_betai[,4],100, main = paste("Price Coefficients Distribution" ), xlab = "Price Coefficients", axes = TRUE, xlim = range(-25:0))
+#?hist
 # MarketSimulation$price<-MarketSimulation$price/100
 # MarketSimulation
 
@@ -85,6 +97,9 @@ mxl_betai$battery5<-0                                                           
 mxl_betai$weight4<-0
 mxl_betai$sound4<-0
 head(mxl_betai)
+
+summary(mxl_betai_copy)
+hist(mxl_betai[,4],100, col="lightskyblue",main = paste("Price Coefficients Distribution" ), xlab = "Price Coefficients", axes = TRUE, xlim = range(-25:0))
 
 ### Determine the max and min value of each row for battery and add it as a column
 ### Then compute the range for battery for each each row
@@ -119,11 +134,18 @@ mxl_betai$imp.sound   <- mxl_betai$range.sound/mxl_betai$sum.range
 ##########################################################
 
 
-summary(mxl_betai[,c("imp.price","imp.battery","imp.weight","imp.sound")])      # Take a look at the summary of the importance attributes
+summary(mxl_betai[,c("imp.price","imp.battery","imp.weight","imp.sound")])
+# Take a look at the summary of the importance attributes
 ### Price:     Min: 0.09996, Median: 0.32624, Mean: 0.34936, Max: 0.78363
 ### Battery:   Min: 0.02159, Median: 0.1544, Mean: 0.18036, Max: 0.58282
 ### Weight:    Min: 0.008403, Median: 0.090054, Mean: 0.109080, Max: 0.460683
 ### Sound:     Min: 0.02405, Median: 0.36229, Mean: 0.36119, Max: 0.78646
+
+boxplot ( mxl_betai[,c("imp.price","imp.battery","imp.weight","imp.sound")], xlab ="Attributes", ylab ="Importance Levels",
+          horizontal = FALSE, col=(c("lightskyblue","pink","palegoldenrod","tomato")) )
+
+
+
 rowSums(mxl_betai[,c("imp.price","imp.battery","imp.weight","imp.sound")])      # All rows should combine to the value 1, as the importance values are percentages of the whole range of importance
 sum(rowSums(mxl_betai[,c("imp.price","imp.battery","imp.weight","imp.sound")])) # The result of adding all rows and all values should logically be 400
 
@@ -154,7 +176,7 @@ rect.hclust(beta.clust, k=4, border="red")                                      
 rect.hclust(beta.clust, k=5, border="blue")                                     # 5 Clusters splits up the biggest cluster, which could help with explainability
 
 ### Elbow Plot to visualize a kink in the curve, where the best amount of clusters is determined with
-plot(beta.clust$height^2)                                                       # Kink is clearly at 4, each cluster more results in only a very small amount of additional fit
+plot(beta.clust$height^2, ylab ="Fit", xlab ="Number of Clusters")                                                       # Kink is clearly at 4, each cluster more results in only a very small amount of additional fit
 
 ### Taking a look at the size of the clusters
 beta.clust$segment<- cutree(beta.clust, k=3)
@@ -268,10 +290,25 @@ length(which(mxl_betai_imp$cluster_hc4 == "4"))                                 
 ###             K-Means Clustering Approach            ###
 ##########################################################
 
+### Kmeans with 3 clusters for testing
+ss.all<-data.frame(i=1:10000,fit=0)                                             # Create a dataframe for all the potential seeds
+head(ss.all)
+### Determine optimal seed by determining the fit for 10000 different seeds
+for(i in 1:10000){
+  set.seed(i+100)
+  tmp <- kmeans(mxl_betai_imp[,1:4], centers =3)
+  ss.all[ss.all$i==i,]$fit<-tmp$betweenss
+}
+str(ss.all)
+### Look for optimal fit and connected seed
+ss.all[which.max(ss.all$fit), ]                                                 # Best fit results with seed 16 with 17.19473
+
+####### Comparing this fit with the fit for 4 clusters results in the use of 4 clusters because of higher fit
+
 
 ### Kmeans with 4 clusters
 ###### Find the optimal seed
-ss.all<-data.frame(i=1:10000,fit=0)                                             # Create a dataframe for all the potential seeds
+ss.all<-data.frame(i=1:10000,fit=0)                                             
 head(ss.all)
 ### Determine optimal seed by determining the fit for 10000 different seeds
 for(i in 1:10000){
@@ -334,7 +371,7 @@ length(which(mxl_betai_imp$cluster_k4 == "4" & mxl_betai_imp$cluster_hc4 == "2" 
 
 ### Kmeans with 5 clusters
 ###### Find the optimal seed
-ss.all<-data.frame(i=1:10000,fit=0)                                             # Create a dataframe for all the potential seeds
+ss.all<-data.frame(i=1:10000,fit=0)                                             
 head(ss.all)
 ### Determine optimal seed by determining the fit for 10000 different seeds
 for(i in 1:10000){
@@ -409,10 +446,6 @@ length(which(mxl_betai_imp$cluster_k5 == "3" & mxl_betai_imp$cluster_k4 == "3"))
 ###       Using MDS & Others to look at Results        ###
 ##########################################################
 
-library(cluster)
-library(MASS)
-library(factoextra)
-library(ggplot2)
 
 ### First get the distance matrix from the 4 importance scores in the mxl_betai dataframe
 n.dist<-dist(apply(mxl_betai_imp[,1:4],2,scale))
@@ -427,7 +460,7 @@ y <- fit$points[,2]
 plot(x, y, xlab = "Coordinate 1", ylab = "Coordinate 2", 
      pch = 20, type = "p", col = mxl_betai_imp$cluster_hc3, lwd = 1, cex =1)
 legend(x=-3,y=4, legend=c("Cluster 1", "Cluster 2", "Cluster 3"),
-       col= c("black", "red", "green"), lty=1:5, cex=0.8)
+       col= c("black", "red", "green"), lty=1, cex=0.8)
 abline(h = 0, v = 0, col = "grey")
 
 ### We will first plot the clusters for hierarchical clustering approach with 4 clusters
@@ -435,7 +468,7 @@ plot(x, y, xlab = "Coordinate 1", ylab = "Coordinate 2",
      pch = 20, type = "p", col = mxl_betai_imp$cluster_hc4, lwd = 1, cex =1)
 legend(x=-3,y=4, legend=c("Cluster 1", "Cluster 2", "Cluster 3", 
                           "Cluster 4"),
-       col= c("black", "red", "green", "blue"), lty=1:5, cex=0.8)
+       col= c("black", "red", "green", "blue"), lty=1, cex=0.8)
 abline(h = 0, v = 0, col = "grey")
 
 ### We will first plot the clusters for k-means clustering approach with 4 clusters
@@ -443,7 +476,7 @@ plot(x, y, xlab = "Coordinate 1", ylab = "Coordinate 2",
      pch = 20, type = "p", col = mxl_betai_imp$cluster_k4, lwd = 1, cex =1)
 legend(x=-3,y=4, legend=c("Cluster 1", "Cluster 2", "Cluster 3", 
                           "Cluster 4"),
-       col= c("black", "red", "blue", "green"), lty=1:5, cex=0.8)
+       col= c("black", "red", "blue", "green"), lty=1, cex=0.8)
 abline(h = 0, v = 0, col = "grey")
 
 
@@ -602,6 +635,7 @@ length(which(mxl_betai_indivData$weight_diff > 0.2))                            
 ######### --> Not very many respondents acted less on weight than they already ranked it (54, 6)
 ######### --> Only very few people acted more on weight than they rated it (36, 4)
 ############ --> Only small margin of error here
+############ -------> Weight is also the most unimportant attribute 
 ######### Sound
 length(which(mxl_betai_indivData$sound_diff < -0.2))                                            # 42
 length(which(mxl_betai_indivData$sound_diff < -0.1))                                            # 102
@@ -633,8 +667,14 @@ table(beta.clust$segment_k4)
 ### Cluster 1: 86 respondents, cluster 2: 109, cluster 3: 78, cluster 4: 127
 ### Look at the results
 seg.summ (mxl_betai_indivData, seg.k$cluster)
-
 ### Resulting interpretations
+################################################################################
+######                      Summary of all respondents
+###### Price:     Min: 0.09996, Median: 0.32624, Mean: 0.34936, Max: 0.78363
+###### Battery:   Min: 0.02159, Median: 0.1544, Mean: 0.18036, Max: 0.58282
+###### Weight:    Min: 0.008403, Median: 0.090054, Mean: 0.109080, Max: 0.460683
+###### Sound:     Min: 0.02405, Median: 0.36229, Mean: 0.36119, Max: 0.78646
+################################################################################
 ################################################################################
 ###### Cluster 1 : The price driven deciders
 ######### Price importance very high 59%), others under 18%, relative importance of price also high (43%), sound at 25%, rest low
@@ -676,6 +716,8 @@ seg.summ (mxl_betai_indivData, seg.k$cluster)
 ######### Higher end of PII, medium SubjKnow and BrandAware.
 ######### --> Middling group with a bit lower ownership and intent to buy, all seem average
 
+summary(mxl_betai_indivData)
+
 ##########################################################
 ###          Using MDS with Property Fitting           ###
 ##########################################################
@@ -692,7 +734,7 @@ plot(x, y, xlab = "Coordinate 1", ylab = "Coordinate 2",
      pch = 20, type = "p", col = mxl_betai_indivData$cluster_k4, lwd = 1, cex =1)
 legend(x=-3,y=4, legend=c("Cluster 1", "Cluster 2", "Cluster 3", 
                           "Cluster 4"),
-       col= c("black", "red", "blue", "green"), lty=1:5, cex=0.8)
+       col= c("black", "red", "blue", "green"), lty=1, cex=0.8)
 abline(h = 0, v = 0, col = "grey")
 
 ### Add arrows to the MDS graph (Property Fitting)
@@ -708,10 +750,12 @@ profit_k4_extA <- lm(cbind(imp.price,imp.battery,imp.weight,imp.sound,PII_mean,
 arrows(x0 = c(0, 0, 0), y0 = c(0, 0, 0), 
        x1 = coef(profit_k4_ext)[1, ]*23, y1 = coef(profit_k4_ext)[2, ]*23, col = 9, lwd = 1)
 text(t(coef(profit_k4_extA)*23), colnames(coef(profit_k4_extA)*23), cex=0.8, col = "gray23", pos = 4)
-text(t(coef(lm(cbind(BrandAware_mean) ~ -1 +  x + y, data = mxl_betai_indivData))*15), "BrandAware_mean", cex=0.9, col = "gray23", pos = 1)
-text(t(coef(lm(cbind(SubjKnow_mean) ~ -1 +  x + y, data = mxl_betai_indivData))*20), "SubjKnow_mean", cex=0.9, col = "gray23", pos = 2)
-text(t(coef(lm(cbind(IntentToBuy) ~ -1 +  x + y, data = mxl_betai_indivData))*5), "IntentToBuy", cex=0.9, col = "gray23", pos = 1)
+text(t(coef(lm(cbind(BrandAware_mean) ~ -1 +  x + y, data = mxl_betai_indivData))*15), "BrandAware_mean", cex=0.9, col = "gray18", pos = 1)
+text(t(coef(lm(cbind(SubjKnow_mean) ~ -1 +  x + y, data = mxl_betai_indivData))*20), "SubjKnow_mean", cex=0.9, col = "gray18", pos = 2)
+text(t(coef(lm(cbind(IntentToBuy) ~ -1 +  x + y, data = mxl_betai_indivData))*5), "IntentToBuy", cex=0.9, col = "gray18", pos = 1)
 ### SubjKnow_Mean and BrandAware_mean overlap with arrow for imp_sound
+
+
 
 
 
@@ -725,6 +769,368 @@ text(t(coef(lm(cbind(IntentToBuy) ~ -1 +  x + y, data = mxl_betai_indivData))*5)
 # Use the individual preference data to document the willingness-to-pay (WTP) of your 
 # 400 respondents in a meaningful way. Interpret your results carefully. Make use 
 # of the information that describes the individuals and carefully describe everything in detail. 
+################################################################################
+### Price is always negative, between the values -24 and -2, meaning that all respondents have negative price elasticities, 
+### they want to play less
+################################################################################
+### We all know what is a good meaningful description of the CBC experiment data:
+###### The table with intercept, estimate, part-worth, range, WTP
+
+
+
+
+###Example
+#    mxl_betai$WTP.Sound5.vs.Sound35 <- mxl_betai$sound1/(-mxl_betai$price)
+#    head(mxl_betai$WTP.Sound5.vs.Sound35,20)*100
+### people are expecting to pay this much less when going from sound 5 to sound 3.5
+###### Somehow get average or values by clusters and interpret them carefully and in detail
+
+### Average
+#   seg.summ (mxl_betai$WTP.Sound5.vs.Sound35, seg.k$cluster)
+### By cluster
+
+
+
+
+
+##########################################################
+###         Build the Subets and Mlogit Models         ###
+##########################################################
+
+
+### Compute mean part-worths in each cluster and calculate the importance 
+### of each attribute and the wtp for non-price attributes
+
+dim(data.cbc) # 28464    16
+
+data.cbc$price <- data.cbc$price/100
+head(data.cbc, 8)
+str(data.cbc)
+
+# Create the chid choice task counter corresponding 
+# to unique idxcs combinatinations
+# NOTE: create chid if you are subseting and using a 
+#       subset of the original data
+chid <- unique(data.cbc[, c("id", "cs")])
+dim(chid)
+chid$chid <- 1:nrow(chid)
+
+data.cbc <- merge(chid, data.cbc, by = c("id", "cs"))
+dim(data.cbc) # 28464    17
+
+# sort the data by id, chid, and alternative
+data.cbc <- data.cbc[order(data.cbc$id, 
+                           data.cbc$chid, 
+                           data.cbc$alt), ]
+
+# mlogit.data() is deprecated, however still works
+# IMPORTANT: input needs to be a data.frame (not a data.table)
+#            need to specify chid variable, so that the panel
+#            dimension is taken into account
+#            and indexing is done correctly
+data_ml_bluetooth <- mlogit.data(data.cbc, 
+                                 choice = "choice", 
+                                 shape = "long",
+                                 id.var = "id", 
+                                 alt.var = "alt",
+                                 chid.var = "chid")
+data_ml_bluetooth # indexing now is correct!
+
+# MNL for all respondents -----------------------------------
+# with mlogit
+mnl_bluetooth = mlogit(choice ~ -1 + none + price + 
+                         battery1 + battery2 + battery3 + battery4 +
+                         weight1 + weight2 + weight3 +
+                         sound1 + sound2 + sound3, 
+                       data = data_ml_bluetooth)
+summary(mnl_bluetooth)
+
+# Extract coefficients
+mnl_bluetooth$coef
+
+### Introducing the predict function for mnl
+predict.mnl <- function(model , data ) {
+  data.model <- model.matrix(
+    update(model$formula, 0 ~ .),
+    data = data )
+  utility <- data.model %*% model$coef
+  share <- exp( utility )/sum (exp ( utility ))
+  cbind (share , data )
+}
+
+
+# Market simulation ---------------------------------------
+MarketSimulation <- read.csv("marketsimulation.csv")
+MarketSimulation$price <- MarketSimulation$price/100
+head(MarketSimulation, 12)
+#MarketSimulation$price<-MarketSimulation$price*2
+
+predict.mnl(mnl_bluetooth, MarketSimulation)
+
+######################################
+######################################
+# MNL BY CLUSTER from k-means with 4 clusters
+######################################
+
+table(beta.clust$segment_k4)
+### Cluster 1: 86 respondents, cluster 2: 109, cluster 3: 78, cluster 4: 127
+### Look at the results
+seg.summ (mxl_betai_indivData, seg.k$cluster)
+
+table(seg.k$cluster)
+
+cluster.solution<-mxl_betai_indivData[,c(1,8)]
+head(cluster.solution)
+seg.summ(mxl_betai_indivData,seg.k$cluster)
+
+data.cbc <- merge(data.cbc, cluster.solution, by ="id")
+table(data.cbc$segment)/4/12
+
+### Divide the price by 100 to get a better interpretation
+#head(data.cbc$price)
+#data.cbc$price <- (data.cbc$price / 100)
+#head(data.cbc$price)
+
+data.cbc.seg1 <- subset(data.cbc,data.cbc$cluster_k4 == 1)
+data.cbc.seg2 <- subset(data.cbc,data.cbc$cluster_k4 == 2)
+data.cbc.seg3 <- subset(data.cbc,data.cbc$cluster_k4 == 3)
+data.cbc.seg4 <- subset(data.cbc,data.cbc$cluster_k4 == 4)
+head(data.cbc.seg1)
+
+### create chid var a new for each of the subsets
+for(i in 1:4){
+  data <- get(paste0("data.cbc.seg", i))
+  data$chid <- NULL
+  head(data)
+  
+  chid <- unique(data[, c("id", "cs")])
+  chid$chid <- 1:nrow(chid)
+  
+  data <- merge(chid, data, by = c("id", "cs"))
+  dim(data)
+  
+  # sort the data by id, chid, and alternative
+  data <- data[order(data$id, data$chid, data$alt), ]
+  head(data)
+  
+  # rewrite the input dataset
+  assign(paste0("data.cbc.seg", i), data)
+}
+
+data_ml_bluetooth.seg1 <- mlogit.data(data.cbc.seg1, 
+                                      choice = "choice", 
+                                      shape = "long",
+                                      id.var = "id", 
+                                      alt.var = "alt",
+                                      chid = "chid")
+
+data_ml_bluetooth.seg2 <- mlogit.data(data.cbc.seg2, 
+                                      choice = "choice", 
+                                      shape = "long",
+                                      id.var = "id", 
+                                      alt.var = "alt",
+                                      chid = "chid")
+
+data_ml_bluetooth.seg3 <- mlogit.data(data.cbc.seg3, 
+                                      choice = "choice", 
+                                      shape = "long",
+                                      id.var = "id", 
+                                      alt.var = "alt",
+                                      chid = "chid")
+
+data_ml_bluetooth.seg4 <- mlogit.data(data.cbc.seg4, 
+                                      choice = "choice", 
+                                      shape = "long",
+                                      id.var = "id", 
+                                      alt.var = "alt",
+                                      chid = "chid")
+
+mnl_bluetooth.seg1 = mlogit(choice ~ -1 + none + price + 
+                              battery1 + battery2 + battery3 + battery4 +
+                              weight1 + weight2 + weight3 +
+                              sound1 + sound2 + sound3, 
+                            data = data_ml_bluetooth.seg1)
+
+mnl_bluetooth.seg2 = mlogit(choice ~ -1 + none + price + 
+                              battery1 + battery2 + battery3 + battery4 +
+                              weight1 + weight2 + weight3 +
+                              sound1 + sound2 + sound3,
+                            data = data_ml_bluetooth.seg2)
+
+mnl_bluetooth.seg3 = mlogit(choice ~ -1 + none + price + 
+                              battery1 + battery2 + battery3 + battery4 +
+                              weight1 + weight2 + weight3 +
+                              sound1 + sound2 + sound3,
+                            data = data_ml_bluetooth.seg3)
+
+mnl_bluetooth.seg4 = mlogit(choice ~ -1 + none + price + 
+                              battery1 + battery2 + battery3 + battery4 +
+                              weight1 + weight2 + weight3 +
+                              sound1 + sound2 + sound3,
+                            data = data_ml_bluetooth.seg4)
+
+
+
+##########################################################
+###          Interpret the estimation results          ###
+##########################################################
+
+
+summary(mnl_bluetooth)
+### Part-worth: (Sum of all estimates / number of alternatives)  * (-1) and then add to all estimates
+### Range: Range between the attribute values from highest to lowest or from 0 to highest/lowest
+### Importance: Range of property / sum of ranges
+### WTP: (Estimate / Estimate of Price) * (-1)
+################################################################################
+#              Estimate     Part-worth      Range       Importance       WTP
+# none        -5.856576   
+# price       -3.483257     -3.483257      3.483257       0.479373     
+# battery1    -1.427359     -0.86036                                   -0.4097771
+# battery2    -0.785019     -0.21802                                   -0.2253692
+# battery3    -0.430745      0.136254                                  -0.1236616
+# battery4    -0.191872      0.375127                                  -0.05508408
+# battery5                   0.566999      1.235487       0.1700305
+# weight1      0.824157      0.3991333                                  0.2366053
+# weight2      0.536748      0.1117243                                  0.1540937
+# weight3      0.339190     -0.0858337                                  0.09737725
+# weight4                   -0.4250237     0.484967       0.06674225
+# sound1      -2.766794     -1.484644                                  -0.7943123
+# sound2      -1.657570     -0.37542                                   -0.4758678
+# sound3      -0.704238      0.577912                                  -0.202178
+# sound4                     1.28215       2.062556       0.2838536
+# Sum Range                                7.266267    
+  
+summary(mnl_bluetooth.seg1)
+
+################################################################################
+#              Estimate     Part-worth      Range       Importance       WTP
+# none        -7.90327   
+# price       -7.55113      -7.55113       7.55113        0.7082316     
+# battery1    -0.98201      -0.819156                                  -0.1300481
+# battery2    -0.29019      -0.127336                                  -0.03843001
+# battery3     0.14183       0.304684                                   0.01878262
+# battery4     0.31610       0.478954                                   0.04186128
+# battery5                   0.162854      0.98201        0.09210416
+# weight1      0.89674       0.504425                                   0.1187557
+# weight2      0.44458       0.052265                                   0.05887596
+# weight3      0.22794      -0.164375                                   0.03018621
+# weight4                   -0.392315      0.89674        0.08410657
+# sound1      -1.23207      -0.684805                                  -0.1631637
+# sound2      -0.50469       0.042575                                  -0.06683635
+# sound3      -0.45230       0.094965                                  -0.05989832
+# sound4                     0.547265      1.23207        0.1155577
+# Sum Range                                10.66195    
+
+summary(mnl_bluetooth.seg2)
+
+################################################################################
+#              Estimate     Part-worth      Range       Importance       WTP
+# none        -6.559171      
+# price       -1.888957     -1.888957       1.888957        0.1625996     
+# battery1    -1.820518     -1.123225                                  -0.9637689
+# battery2    -1.000684     -0.3033906                                 -0.5297548
+# battery3    -0.585996      0.1112974                                 -0.310222
+# battery4    -0.079269      0.6180244                                 -0.04196443
+# battery5                   0.6972934      1.820518        0.1567084
+# weight1      0.976052      0.504425                                   0.5167148
+# weight2      0.615419      0.133699                                   0.3257983
+# weight3      0.335409     -0.146311                                   0.1775631
+# weight4                   -0.48172        0.976052        0.08401762
+# sound1      -6.931700     -3.785517                                   -3.669591
+# sound2      -3.971737     -0.825554                                   -2.102608
+# sound3      -1.681293      1.46489                                    -0.8900642
+# sound4                     3.146183       6.931700        0.5966741
+# Sum Range                                11.61723    
+summary(mnl_bluetooth.seg3)
+
+################################################################################
+#              Estimate     Part-worth      Range       Importance       WTP
+# none        -4.93652          
+# price       -2.80279      -2.80279       2.80279         0.3092891     
+# battery1    -3.45188      -1.937248                                  -1.231587
+# battery2    -2.14149      -0.626858                                  -0.7640565
+# battery3    -1.20222       0.312412                                  -0.4289369
+# battery4    -0.77757       0.737062                                  -0.2774271
+# battery5                   1.514632      3.45188         0.3809164
+# weight1      1.58422       0.7839925                                  0.5652296
+# weight2      1.01691       0.2166825                                  0.3628206
+# weight3      0.59978      -0.2004475                                  0.2139939
+# weight4                   -0.8002275     1.58422         0.1748194
+# sound1      -1.22315      -0.8067775                                 -0.4364044
+# sound2      -0.32874       0.0876325                                 -0.1172903
+# sound3      -0.11360       0.3027725                                 -0.04053104
+# sound4                     0.4163725     1.22315         0.1349751
+# Sum Range                                9.06204    
+
+summary(mnl_bluetooth.seg4)
+
+################################################################################
+#              Estimate     Part-worth      Range       Importance       WTP
+# none        -8.310769             
+# price       -5.769891     -5.769891       5.769891         0.4423535     
+# battery1    -1.248910     -0.8814236                                  -0.216453
+# battery2    -0.349291      0.0181954                                  -0.06053685
+# battery3    -0.176043      0.1914434                                  -0.03051063
+# battery4    -0.063188      0.3042984                                  -0.01095133
+# battery5                   0.3674864      1.248910         0.09574873
+# weight1      1.205306      0.5303077                                   0.2088958
+# weight2      0.844939      0.1699407                                   0.1464393
+# weight3      0.649748     -0.0252503                                   0.1126101
+# weight4                   -0.6749983      1.205306         0.09240579
+# sound1      -4.819516     -2.827074                                   -0.8352872
+# sound2      -2.307857     -0.315415                                   -0.3999828
+# sound3      -0.842395      1.150047                                   -0.1459984
+# sound4                     1.992442       4.819516         0.3694922
+# Sum Range                                13.04362    
+
+
+
+
+
+
+##########################################################
+###             Determine WTP individually             ###
+##########################################################
+
+### Add columns for each attribute willingness to pay to later assess for all and individually via subsets
+###### Starting with the battery attribute
+mxl_betai$WTP_battery1 <- mxl_betai$battery1/(-mxl_betai$price)
+mxl_betai$WTP_battery2 <- mxl_betai$battery2/(-mxl_betai$price)
+mxl_betai$WTP_battery3 <- mxl_betai$battery3/(-mxl_betai$price)
+mxl_betai$WTP_battery4 <- mxl_betai$battery4/(-mxl_betai$price)
+
+###### Weight
+mxl_betai$WTP_weight1 <- mxl_betai$weight1/(-mxl_betai$price)
+mxl_betai$WTP_weight2 <- mxl_betai$weight2/(-mxl_betai$price)
+mxl_betai$WTP_weight3 <- mxl_betai$weight3/(-mxl_betai$price)
+
+###### Sound
+mxl_betai$WTP_sound1 <- mxl_betai$sound1/(-mxl_betai$price)
+mxl_betai$WTP_sound2 <- mxl_betai$sound2/(-mxl_betai$price)
+mxl_betai$WTP_sound3 <- mxl_betai$sound3/(-mxl_betai$price)
+
+mxl_betai_subset1 <- subset(mxl_betai,mxl_betai$cluster_k4 == 1)
+mxl_betai_subset2 <- subset(mxl_betai,mxl_betai$cluster_k4 == 2)
+mxl_betai_subset3 <- subset(mxl_betai,mxl_betai$cluster_k4 == 3)
+mxl_betai_subset4 <- subset(mxl_betai,mxl_betai$cluster_k4 == 4)
+
+### Lets take a look at the summary of all the respective attributes for all and then for the clusters
+summary(mxl_betai[,c(4,30:33,38:47)])
+summary(mxl_betai_subset1[,c(4,30:33,38:47)])
+summary(mxl_betai_subset2[,c(4,30:33,38:47)])
+summary(mxl_betai_subset3[,c(4,30:33,38:47)])
+summary(mxl_betai_subset4[,c(4,30:33,38:47)])
+
+### Or compare on specific attribute for all clusters
+seg.summ (mxl_betai$WTP_sound1, seg.k$cluster)
+
+
+######                      Summary of all respondents
+###### Price:     Min: 0.09996, Median: 0.32624, Mean: 0.34936, Max: 0.78363
+###### Battery:   Min: 0.02159, Median: 0.1544, Mean: 0.18036, Max: 0.58282
+###### Weight:    Min: 0.008403, Median: 0.090054, Mean: 0.109080, Max: 0.460683
+###### Sound:     Min: 0.02405, Median: 0.36229, Mean: 0.36119, Max: 0.78646
+################################################################################
 
 
 
@@ -732,82 +1138,68 @@ text(t(coef(lm(cbind(IntentToBuy) ~ -1 +  x + y, data = mxl_betai_indivData))*5)
 
 
 
+##########################################################
+###                  Market Simulation                 ###
+##########################################################
+
+##########################################################
+#####     Assuming the following market structure    #####
+##########################################################
+
+### Product 1: Sound 5.0, Weight 600gr, Battery life 12 hours
+### Product 2: Sound 4.0, Weight 400gr, Battery life 16 hours
+### Product 3: None
+###### Cost of a Product 1 is 75 Euro and that of Product 2 is 70 Euro
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-mxl_betai$WTP.Sound5.vs.Sound35 <- mxl_betai$sound1/(-mxl_betai$price)
-head(mxl_betai$WTP.Sound5.vs.Sound35,20)*100
-
-
-
-
+### Prepare the Marketsimulation dataframe
 MarketSimulation$price<-MarketSimulation$price/100
 MarketSimulation
 
 ### Create a new dataframe without id, counter and x columns
-mxl.betai<-mxl_betai[,c(-1,-2,-15)]
+mxl.betai<-mxl_betai_copy[,c(-1,-2,-15)]
 head(mxl.betai,10)
 
 
 #############################################################################
-####
 #### Predict Market shares for information given in MarketSimulation
-####
 #############################################################################
 
-
+##########################################################
+#####   Create the marketshare prediction function   #####
+##########################################################
 predict.mxl <- function(X, theta) {
   eu <- exp(as.matrix(X) %*% t(theta))
   p <- t(eu) / colSums(eu)
   #  return(p)
   return(colMeans(p))
 }
+### Show results of first prediction for both having the price 100
 tmp<-predict.mxl(MarketSimulation, mxl.betai)
 tmp
 
 
 
-##################################################################################
-####
-#### Predict Market shares for changing prices given the price of the other product
-####
-##################################################################################
-brand <- 1
-prices <- seq(0, 2, 0.01)
+##########################################################
+#####    Predict market shares for changing prices   #####
+##########################################################
+brand <- 1                                                                      # Brand is which product gets its prices changed
+prices <- seq(0, 2, 0.01)                                                       # Sequence of price between 0 and 2 with steps of 0.01
 
 head(prices)
 X <- MarketSimulation
-share <- matrix(0, length(prices), nrow(X))
+share <- matrix(0, length(prices), nrow(X))                                     # Variable including all the market shares for each product and none
 X
+### Fill in the market share values for the different prices
 for (k in seq_along(prices)) {
   X[brand, "price"] <- prices[k]
   share[k,] <- predict.mxl(X, mxl.betai)
 }
 
+### Plot the resulting market shares for all products
 matplot(prices, share, type = "l", lty = 1, ylim = c(0, 1))
+### Plot only the market share curve for the product changing its price
 plot(prices, share[, brand], type = "l", ylim = c(0, 1))
 
 
@@ -815,12 +1207,9 @@ plot(prices, share[, brand], type = "l", ylim = c(0, 1))
 head(share,11)*100
 round(apply(share,2,mean)*100,3)
 
-
-#############################################################################
-####
-#### Predict Profit for changing prices given the price of the other product
-####
-#############################################################################
+##########################################################
+#####    Predict profit for changing prices   #####
+##########################################################
 
 
 brand <- 1
@@ -832,12 +1221,14 @@ profit <- matrix(0, length(prices), nrow(X))
 X
 for (k in seq_along(prices)) {
   X[brand, "price"] <- prices[k]
-  profit[k,] <- (prices[k]-0.75)*predict.mxl(X, mxl.betai)
+  profit[k,] <- (prices[k]-0.75)*predict.mxl(X, mxl.betai)                      # Need to adapt to correct price of product
 }
 #matplot(prices, profit, type = "l", lty = 1, ylim = c(0, 1))
 plot(prices, profit[, brand], type = "l", ylim = c(0, 1))
-max(profit)
-
+max(profit)                                                                     
+### Multiply this with the market size (400 respondents or else, to get the final value)
+#max(profit) * 100 * 400
+########!!!!!!!!!!!! Multiply with 100 and with the size of the worldwide market
 
 brand <- 2
 prices <- seq(0, 2, 0.01)
@@ -852,3 +1243,82 @@ plot(prices, profit[, brand], type = "l", ylim = c(0, 1))
 max(profit[,brand])
 profit
 
+
+
+##########################################################
+#####      Plot both profit maximizing functions     #####
+##########################################################
+
+
+brand_Product1 <- 1
+brand_Product2 <- 2
+prices <- seq(0, 2, 0.01)
+X <- MarketSimulation
+profit_Product1 <- matrix(0, length(prices), nrow(X))
+
+for (k in seq_along(prices)) {
+  X[brand_Product1, "price"] <- prices[k]
+  profit_Product1[k,] <- (prices[k]-0.75)*predict.mxl(X, mxl.betai)             
+}
+#matplot(prices, profit, type = "l", lty = 1, ylim = c(0, 1))
+
+profit_Product2 <- matrix(0, length(prices), nrow(X))
+for (k in seq_along(prices)) {
+  X[brand_Product2, "price"] <- prices[k]
+  profit_Product2[k,] <- (prices[k]-0.7)*predict.mxl(X, mxl.betai)
+}
+#matplot(prices, profit, type = "l", lty = 1, ylim = c(0, 1))
+
+
+max(profit_Product1) 
+max(profit_Product2)   
+plot(prices, profit_Product1[, brand_Product1], type = "l", ylim = c(-0.45, 0.35), col ="blue")
+lines(prices, profit_Product2[, brand_Product2], col ="green")
+
+
+
+
+##########################################################
+#####      Predict max profit for both products      #####
+##########################################################
+
+MarketSimulation$price[1] <- 1.34
+MarketSimulation$price[2] <- 1.14
+MarketSimulation$price
+  
+brand <- 1
+prices <- seq(0, 2, 0.01)
+
+head(prices)
+X <- MarketSimulation
+profit <- matrix(0, length(prices), nrow(X))
+X
+for (k in seq_along(prices)) {
+  X[brand, "price"] <- prices[k]
+  profit[k,] <- (prices[k]-0.75)*predict.mxl(X, mxl.betai)                      # Need to adapt to correct price of product
+}
+max(profit[,brand]) #0.2116995 # 0.2563869 #0.2598845
+profit # Maximum profit price is 132 # 133 #134
+
+brand <- 2
+prices <- seq(0, 2, 0.01)
+X <- MarketSimulation
+profit <- matrix(0, length(prices), nrow(X))
+for (k in seq_along(prices)) {
+  X[brand, "price"] <- prices[k]
+  profit[k,] <- (prices[k]-0.7)*predict.mxl(X, mxl.betai)
+}
+#matplot(prices, profit, type = "l", lty = 1, ylim = c(0, 1))
+#plot(prices, profit[, brand], type = "l", ylim = c(0, 1))
+max(profit[,brand]) #0.1672288 #0.1698139 #0.172394
+profit #113 #114 #114
+
+### Final prices are: product1 : 134 euros, product2 : 114 euros
+
+tmp<-predict.mxl(MarketSimulation, mxl.betai)
+tmp
+
+predict.mnl(mnl_bluetooth, MarketSimulation)
+
+### Maximum profit is then (market size 1): ((134-75) * 0.4404087) + ((114-70) * 0.3916958)
+### Results in 43.21873
